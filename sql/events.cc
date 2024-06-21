@@ -340,7 +340,7 @@ Events::create_event(THD *thd, Event_parse_data *parse_data)
     DBUG_RETURN(TRUE);
 
   /* At create, one of them must be set */
-  DBUG_ASSERT(parse_data->expression || parse_data->execute_at);
+  DBUG_ASSERT(parse_data->expression || parse_data->execute_at || parse_data->dbevent);
 
   if (check_access(thd, EVENT_ACL, parse_data->dbname.str, NULL, NULL, 0, 0))
     DBUG_RETURN(TRUE);
@@ -364,7 +364,7 @@ Events::create_event(THD *thd, Event_parse_data *parse_data)
   */
   save_binlog_format= thd->set_current_stmt_binlog_format_stmt();
 
-  if (thd->lex->create_info.or_replace() && event_queue)
+  if (thd->lex->create_info.or_replace() && event_queue && parse_data->dbevent_null)
     event_queue->drop_event(thd, &parse_data->dbname, &parse_data->name);
 
   /* On error conditions my_error() is called so no need to handle here */
@@ -374,7 +374,8 @@ Events::create_event(THD *thd, Event_parse_data *parse_data)
     Event_queue_element *new_element;
     bool dropped= 0;
 
-    if (!event_already_exists)
+    /* If it's a database event, there is no need to add to the event queue. */
+    if (!event_already_exists || !parse_data->dbevent_null)
     {
       if (!(new_element= new Event_queue_element()))
         ret= TRUE;                                // OOM
@@ -420,7 +421,7 @@ Events::create_event(THD *thd, Event_parse_data *parse_data)
 
   thd->restore_stmt_binlog_format(save_binlog_format);
 
-  if (!ret && Events::opt_event_scheduler == Events::EVENTS_OFF)
+  if (!parse_data->dbevent && !ret && Events::opt_event_scheduler == Events::EVENTS_OFF)
   {
     push_warning(thd, Sql_condition::WARN_LEVEL_WARN, ER_UNKNOWN_ERROR, 
       "Event scheduler is switched off, use SET GLOBAL event_scheduler=ON to enable it.");
@@ -1224,6 +1225,13 @@ Events::load_events_from_db(THD *thd)
       goto end;
     }
 
+    /* It's a databse event, so we don't add to the queue. */
+    if(!et->dbevent_null)
+    {
+      delete et;
+      continue;
+    }
+
 #ifdef WITH_WSREP
     /**
       If SST is done from a galera node that is also acting as MASTER
@@ -1300,6 +1308,97 @@ end:
   end_read_record(&read_record_info);
 
   close_mysql_tables(thd);
+  DBUG_RETURN(ret);
+}
+
+bool
+Events::search_n_execute_db_events(THD *thd,
+                                   Event_parse_data::enum_dbevent dbevent) {
+  DBUG_ENTER("Events::search_n_execute_db_events");
+  /* We need a temporary THD */
+  if (!thd)
+  {
+    if (!(thd= new THD(0)))
+    {
+      DBUG_RETURN(TRUE);
+    }
+    thd->thread_stack= (char*) &thd;
+    thd->store_globals();
+    thd->set_query_inner((char*) STRING_WITH_LEN("intern:Events::search_n_execute_db_events"),
+                         default_charset_info);
+    thd->set_time();
+  }
+
+  bool ret= TRUE;
+  TABLE *table;
+  READ_RECORD read_record_info;
+  DBUG_PRINT("enter", ("thd: %p", thd));
+
+  privilege_t saved_master_access(thd->security_ctx->master_access);
+  thd->security_ctx->master_access |= PRIV_IGNORE_READ_ONLY;
+  bool save_tx_read_only= thd->tx_read_only;
+  thd->tx_read_only= false;
+
+  ret= db_repository->open_event_table(thd, TL_WRITE, &table);
+
+  thd->tx_read_only= save_tx_read_only;
+  thd->security_ctx->master_access= saved_master_access;
+
+  if (ret)
+  {
+    my_message_sql(ER_STARTUP,
+                   "Event Scheduler: Failed to open table mysql.event",
+                   MYF(ME_ERROR_LOG));
+    DBUG_RETURN(TRUE);
+  }
+
+  if (init_read_record(&read_record_info, thd, table, NULL, NULL, 0, 1, FALSE))
+  {
+    close_thread_tables(thd);
+    DBUG_RETURN(TRUE);
+  }
+
+  while (!(read_record_info.read_record()))
+  {
+    Event_queue_element *et;
+
+    if (!(et= new Event_queue_element))
+      goto end;
+
+    DBUG_PRINT("info", ("Loading event from row."));
+
+    if (et->load_from_row(thd, table))
+    {
+      my_message(ER_STARTUP,
+                 "Event Scheduler: "
+                 "Error while loading events from mysql.event. "
+                 "The table probably contains bad data or is corrupted",
+                 MYF(ME_ERROR_LOG));
+      delete et;
+      goto end;
+    }
+
+    if((Event_parse_data::enum_dbevent) et->dbevent == dbevent) {
+      Event_queue_element_for_exec *event_name;
+      if(!(event_name= new Event_queue_element_for_exec()) ||
+        event_name->init(et->dbname, et->name))
+      {
+        delete event_name;
+        ret= TRUE;
+        goto end;
+      }
+      event_name->dropped = FALSE;
+      scheduler->run_single(event_name);
+    }
+    delete et;
+  }
+  ret= FALSE;
+
+end:
+  end_read_record(&read_record_info);
+
+  close_mysql_tables(thd);
+  delete thd;
   DBUG_RETURN(ret);
 }
 

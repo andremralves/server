@@ -66,6 +66,11 @@ const TABLE_FIELD_TYPE event_table_fields[ET_FIELD_COUNT] =
     {NULL, 0}
   },
   {
+    { STRING_WITH_LEN("db_event") },
+    { STRING_WITH_LEN("enum('AFTER_STARTUP','BEFORE_SHUTDOWN')") },
+    {NULL, 0}
+  },
+  {
     { STRING_WITH_LEN("interval_value") },
     { STRING_WITH_LEN("int(11)") },
     {NULL, 0}
@@ -285,6 +290,7 @@ mysql_event_fill_row(THD *thd,
                                   scs);
 
     fields[ET_FIELD_EXECUTE_AT]->set_null();
+    fields[ET_FIELD_DB_EVENT]->set_null();
 
     if (!et->starts_null)
     {
@@ -315,12 +321,24 @@ mysql_event_fill_row(THD *thd,
     fields[ET_FIELD_TRANSIENT_INTERVAL]->set_null();
     fields[ET_FIELD_STARTS]->set_null();
     fields[ET_FIELD_ENDS]->set_null();
+    fields[ET_FIELD_DB_EVENT]->set_null();
 
     MYSQL_TIME time;
     my_tz_OFFSET0->gmt_sec_to_TIME(&time, et->execute_at);
 
     fields[ET_FIELD_EXECUTE_AT]->set_notnull();
     fields[ET_FIELD_EXECUTE_AT]->store_time(&time);
+  }
+  else if (et->dbevent)
+  {
+    fields[ET_FIELD_DB_EVENT]->set_notnull();
+    rs|= fields[ET_FIELD_DB_EVENT]->store((longlong)et->dbevent, TRUE);
+
+    fields[ET_FIELD_INTERVAL_EXPR]->set_null();
+    fields[ET_FIELD_TRANSIENT_INTERVAL]->set_null();
+    fields[ET_FIELD_STARTS]->set_null();
+    fields[ET_FIELD_ENDS]->set_null();
+    fields[ET_FIELD_EXECUTE_AT]->set_null();
   }
   else
   {

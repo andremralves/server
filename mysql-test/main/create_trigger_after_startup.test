@@ -1,0 +1,16 @@
+--source include/not_embedded.inc
+--source include/no_view_protocol.inc
+
+CREATE TABLE t1 (inc INT);
+INSERT INTO t1 VALUES (0);
+SELECT * FROM t1;
+
+CREATE TRIGGER startup_trg AFTER STARTUP DO UPDATE test.t1 SET inc = inc + 1;
+
+--source include/restart_mysqld.inc
+
+SELECT * FROM t1;
+
+DROP TABLE t1;
+DROP EVENT startup_trg;
+

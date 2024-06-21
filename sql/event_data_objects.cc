@@ -53,6 +53,19 @@ PSI_statement_info Event_queue_element_for_exec::psi_info=
 { 0, "event", 0};
 #endif
 
+/*
+  Name description of enum_dbevent names.
+
+  It's useful for retrieving dbevent from the table.
+*/
+
+LEX_CSTRING enum_dbevent_to_name[Event_parse_data::DBEVENT_LAST] = {
+  /* just a trick because enum_dbevent is one indexed*/
+  { STRING_WITH_LEN("NULL")},
+  { STRING_WITH_LEN("AFTER_STARTUP")},
+  { STRING_WITH_LEN("BEFORE_SHUTDOWN")},
+};
+
 /*************************************************************************/
 
 /**
@@ -315,8 +328,8 @@ Event_queue_element::Event_queue_element():
 {
   DBUG_ENTER("Event_queue_element::Event_queue_element");
 
-  starts= ends= execute_at= last_executed= 0;
-  starts_null= ends_null= execute_at_null= TRUE;
+  dbevent= starts= ends= execute_at= last_executed= 0;
+  dbevent_null= starts_null= ends_null= execute_at_null= TRUE;
 
   DBUG_VOID_RETURN;
 }
@@ -518,18 +531,38 @@ Event_queue_element::load_from_row(THD *thd, TABLE *table)
     expression= table->field[ET_FIELD_INTERVAL_EXPR]->val_int();
   else
     expression= 0;
-  /*
-    If neigher STARTS and ENDS is set, then both fields are empty.
-    Hence, if ET_FIELD_EXECUTE_AT is empty there is an error.
-  */
   execute_at_null= table->field[ET_FIELD_EXECUTE_AT]->is_null();
-  DBUG_ASSERT(!(starts_null && ends_null && !expression && execute_at_null));
   if (!expression && !execute_at_null)
   {
     if (table->field[ET_FIELD_EXECUTE_AT]->get_date(&time, TIME_NO_ZERO_DATE |
                                                     thd->temporal_round_mode()))
       DBUG_RETURN(TRUE);
     execute_at= my_tz_OFFSET0->TIME_to_gmt_sec(&time,&not_used);
+  }
+
+  dbevent_null= table->field[ET_FIELD_DB_EVENT]->is_null();
+  /*
+    If neigher STARTS, ENDS and EXECUTE_AT is set, then they are empty.
+    Hence, if ET_FIELD_DB_EVENT is empty there is an error.
+  */
+  DBUG_ASSERT(!(starts_null && ends_null && !expression &&
+                execute_at_null && dbevent_null));
+  if(!dbevent_null) {
+    int i;
+    char buff[MAX_FIELD_WIDTH];
+    String str(buff, sizeof(buff), &my_charset_bin);
+    LEX_CSTRING tmp;
+
+    table->field[ET_FIELD_DB_EVENT]->val_str(&str);
+    if (!(tmp.length= str.length()))
+      DBUG_RETURN(TRUE);
+
+    tmp.str= str.c_ptr_safe();
+
+    i= find_string_in_array(enum_dbevent_to_name, &tmp, system_charset_info);
+    if (i < 0)
+      DBUG_RETURN(TRUE);
+    dbevent= (Event_parse_data::enum_dbevent) i;
   }
 
   /*

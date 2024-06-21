@@ -96,6 +96,7 @@ class Event_queue_element : public Event_basic
 public:
   int on_completion;
   int status;
+  int dbevent;
   uint32 originator;
 
   my_time_t last_executed;
@@ -105,6 +106,7 @@ public:
   bool starts_null;
   bool ends_null;
   bool execute_at_null;
+  bool dbevent_null;
 
   longlong expression;
   interval_type interval;

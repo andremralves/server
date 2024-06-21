@@ -90,13 +90,15 @@ public:
   bool
   run(THD *thd);
 
-
   /* Information retrieving methods follow */
   bool
   is_running();
 
   void
   dump_internal_status();
+
+  bool
+  run_single(Event_queue_element_for_exec *event_name);
 
 private:
   uint

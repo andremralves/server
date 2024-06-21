@@ -8330,7 +8330,11 @@ copy_event_to_schema_table(THD *thd, TABLE *sch_table, TABLE *event_table)
 
   int not_used=0;
 
-  if (et.expression)
+  if(et.dbevent)
+  {
+    sch_table->field[ISE_EVENT_TYPE]->store(STRING_WITH_LEN("RECURRING"), scs);
+  }
+  else if (et.expression)
   {
     String show_str;
     /* type */

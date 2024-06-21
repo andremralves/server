@@ -70,6 +70,7 @@
 #include "mysqld_suffix.h"
 #include "mysys_err.h"
 #include "events.h"
+#include "event_parse_data.h"
 #include "sql_audit.h"
 #include "probes_mysql.h"
 #include "scheduler.h"
@@ -5987,6 +5988,8 @@ int mysqld_main(int argc, char **argv)
   Events::set_original_state(Events::opt_event_scheduler);
   if (Events::init((THD*) 0, opt_noacl || opt_bootstrap))
     unireg_abort(1);
+
+  Events::search_n_execute_db_events((THD*) 0, Event_parse_data::AFTER_STARTUP);
 
 #ifdef WITH_WSREP
   if (WSREP_ON)

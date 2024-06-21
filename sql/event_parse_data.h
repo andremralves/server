@@ -54,9 +54,17 @@ public:
     ON_COMPLETION_PRESERVE
   };
 
+  enum enum_dbevent
+  {
+    AFTER_STARTUP = 1,
+    BEFORE_SHUTDOWN,
+    DBEVENT_LAST
+  };
+
   int on_completion;
   int status;
   bool status_changed;
+  int dbevent;
   uint32 originator;
   /*
     do_not_create will be set if STARTS time is in the past and
@@ -81,6 +89,7 @@ public:
   bool starts_null;
   bool ends_null;
   bool execute_at_null;
+  bool dbevent_null;
 
   sp_name *identifier;
   Item* item_expression;

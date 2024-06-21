@@ -837,6 +837,26 @@ Event_scheduler::dump_internal_status()
   DBUG_VOID_RETURN;
 }
 
+/*
+ Runs a single event by calling execute_top directly in order to
+ run database events without dealing with the event queue.
+
+  SYNOPSIS
+    Event_scheduler::run_single()
+
+  RETURN VALUE
+    FALSE  OK
+    TRUE   Error (Serious error)
+*/
+
+bool
+Event_scheduler::run_single(Event_queue_element_for_exec *event_name)
+{
+  DBUG_ENTER("Event_scheduler::run_single");
+  
+  DBUG_RETURN(execute_top(event_name));
+}
+
 /**
   @} (End of group Event_Scheduler)
 */
